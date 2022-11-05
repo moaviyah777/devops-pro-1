@@ -1,89 +1,60 @@
 pipeline {
-    agent any
+    agent any 
     tools {
-        maven "Maven3"
+        maven "maven"
     }
     
     stages {
-        stage('Checkout') {
+        stage('checkout') {
             steps {
-                    checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[credentialsId: 'c5d1add2-cbcb-470b-88f0-81b0076f9d93', url: 'https://github.com/akannan1087/myMar2022WeekdayBatchRepo']]])
-
+                checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/akannan1087/myMar2022WeekdayBatchRepo.git']]])
             }
         }
         
-        stage ("Build") {
+        stage('build') {
             steps {
-                sh "mvn clean install -f MyWebApp/pom.xml"
-            }
-            
-        }
-
-        stage ("Code scan") {
-            steps {
-                withSonarQubeEnv("Sonarqube") {
-                sh "mvn sonar:sonar -f MyWebApp/pom.xml"
-            }
-         }
-        }
-        
-        stage ("Nexus upload") {
-            steps {
-                nexusArtifactUploader artifacts: [[artifactId: 'MyWebApp', classifier: '', file: 'MyWebApp/target/MyWebApp.war', type: 'war']], credentialsId: '03405c4b-8bfd-42f6-94b5-2fcb1657b7c0', groupId: 'com.dept.app', nexusUrl: 'ec2-3-140-187-14.us-east-2.compute.amazonaws.com:8081/', nexusVersion: 'nexus3', protocol: 'http', repository: 'maven-snapshots', version: '1.0-SNAPSHOT'
-
+                sh 'mvn clean install -f MyWebApp/pom.xml'
             }
         }
         
-        stage ("DEV deploy") {
+        stage('quality') {
             steps {
-                 deploy adapters: [tomcat9(credentialsId: '3fc8c614-a0c1-4fae-a0ce-af884cccf5d1', path: '', url: 'http://ec2-3-135-116-26.us-east-2.compute.amazonaws.com:8080/')], contextPath: null, war: '**/*.war'   
-
+                withSonarQubeEnv('sonarqube') {
+                    sh 'mvn sonar:sonar -f MyWebApp/pom.xml'
+                }
             }
         }
         
-        stage ("Slack") {
+        stage('upload artifact') {
             steps {
-                slackSend channel: 'mar-2022-weekday-batch,feb-2022-weekday-batch', message: 'DEV Deployment was successful, please start DEV testing'
+                nexusArtifactUploader artifacts: [[artifactId: 'MyWebApp', classifier: '', file: 'MyWebApp/target/MyWebApp.war', type: 'war']], credentialsId: 'nexus-pass', groupId: 'com.dept.app', nexusUrl: '10.128.0.55:8081', nexusVersion: 'nexus3', protocol: 'http', repository: 'maven-snapshots', version: '1.0-SNAPSHOT'
             }
         }
-
-
-    stage ("DEV Approve") {
-        steps {
-        echo "Taking approval from DEV Manager for QA Deploy"     
-        timeout(time: 7, unit: 'DAYS') {
-        input message: 'Do you approve to deploy into QA environment?', submitter: 'admin'
+        
+        stage('deploy to stage') {
+            steps {
+                deploy adapters: [tomcat8(credentialsId: 'tomcat-pass', path: '', url: 'http://10.128.0.60:8080')], contextPath: null, war: '**/*.war'
+            }
         }
-    }
-  }
-    stage ("QA deploy") {
-        steps {
-            deploy adapters: [tomcat9(credentialsId: '3fc8c614-a0c1-4fae-a0ce-af884cccf5d1', path: '', url: 'http://ec2-3-135-116-26.us-east-2.compute.amazonaws.com:8080/')], contextPath: null, war: '**/*.war'   
+        
+        stage('slack message for stage') {
+            steps {
+                slackSend channel: 'otter-channel', message: 'file deployed to stage successfully '
+            }
         }
-    }
-    stage ("QA Notify") {
-        steps {
-            slackSend channel: 'mar-2022-weekday-batch,feb-2022-weekday-batch', message: 'QA Deployment was successful, please start your functional testing'
+        
+        stage('approval') {
+            steps {
+                timeout(time: 5, unit: 'HOURS') {
+                    input message: 'want to deploy to prod', submitter: 'admin'
+                }
+            }
         }
-    }
-    stage ("QA Approve") {
-        steps {
-            echo "Taking approval from QA Manager for PROD Deploy"     
-            timeout(time: 7, unit: 'DAYS') {
-            input message: 'Do you approve to deploy into PROD environment?', submitter: 'admin'
-          }
+        
+        stage('prod') {
+            steps {
+                deploy adapters: [tomcat8(credentialsId: 'tomcat-pass', path: '', url: 'http://10.162.0.2:8080')], contextPath: null, war: '**/*.war'
+            }
         }
-    }
-
-    stage ("PROD deploy") {
-    steps {
-        deploy adapters: [tomcat9(credentialsId: '3fc8c614-a0c1-4fae-a0ce-af884cccf5d1', path: '', url: 'http://ec2-3-135-116-26.us-east-2.compute.amazonaws.com:8080/')], contextPath: null, war: '**/*.war'   
-        }
-    }
-    stage ("final Notify") {
-        steps {
-            slackSend channel: 'product-owners-teams', message: 'PROD Deployment was successful, please inform to the end customers..'
-       }
-     }
     }
 }
