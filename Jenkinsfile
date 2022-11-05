@@ -39,7 +39,7 @@ pipeline {
         
         stage('slack message for stage') {
             steps {
-                slackSend channel: 'otter-channel', message: 'file deployed to stage successfully '
+                slackSend channel: 'otter-channel', message: 'app deployed to stage successfully '
             }
         }
         
@@ -54,6 +54,12 @@ pipeline {
         stage('prod') {
             steps {
                 deploy adapters: [tomcat8(credentialsId: 'tomcat-pass', path: '', url: 'http://10.162.0.2:8080')], contextPath: null, war: '**/*.war'
+            }
+        }
+        
+        stage('slack massage to prod') {
+            steps {
+                slackSend channel: 'otter-channel', message: 'app deployed to prod successfully '
             }
         }
     }
